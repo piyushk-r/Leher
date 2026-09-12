@@ -91,17 +91,45 @@ function stripDataUrl(photo) {
   return match ? { mediaType: match[1], data: match[2] } : null;
 }
 
-/** Clamp a model-supplied box into the image and drop nonsense. */
+const MIN_ZONE_SIDE_PCT = 4;
+
+/**
+ * Turn a model-supplied box into a trustworthy [x, y, w, h], or reject it.
+ *
+ * Two things go wrong in practice. The model sometimes drifts into corner
+ * coordinates ([x1, y1, x2, y2]) despite the prompt, which is detectable: read
+ * that way the box lands inside the image, read as width/height it overflows.
+ * And it sometimes emits outright nonsense like [100, 100, 1, 1].
+ *
+ * Rejecting is much safer than salvaging here. An earlier version clamped
+ * w to (100 - x), which silently converted a garbage box into a 1%-wide sliver
+ * that still passed every downstream check and then poisoned the pin-to-zone
+ * geometry. A dropped zone just means less context; a wrong zone means a
+ * confidently wrong recommendation.
+ */
 function sanitiseBox(box) {
   if (!Array.isArray(box) || box.length !== 4) return null;
-  const nums = box.map(Number);
-  if (nums.some((n) => !Number.isFinite(n))) return null;
 
-  let [x, y, w, h] = nums;
-  x = Math.max(0, Math.min(100, x));
-  y = Math.max(0, Math.min(100, y));
-  w = Math.max(1, Math.min(100 - x, w));
-  h = Math.max(1, Math.min(100 - y, h));
+  const nums = box.map(Number);
+  if (nums.some((n) => !Number.isFinite(n) || n < 0 || n > 100)) return null;
+
+  let [a, b, c, d] = nums;
+
+  // Corner-coordinate drift: [x1,y1,x2,y2] with x2>x1 and y2>y1, where reading
+  // c/d as width/height would run off the edge.
+  const overflows = a + c > 100.5 || b + d > 100.5;
+  if (overflows && c > a && d > b) {
+    [a, b, c, d] = [a, b, c - a, d - b];
+  }
+
+  const x = Math.max(0, Math.min(100, a));
+  const y = Math.max(0, Math.min(100, b));
+  const w = Math.min(c, 100 - x);
+  const h = Math.min(d, 100 - y);
+
+  // A zone thinner than a few percent of the image is not a real region.
+  if (w < MIN_ZONE_SIDE_PCT || h < MIN_ZONE_SIDE_PCT) return null;
+
   return [x, y, w, h];
 }
 
