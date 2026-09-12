@@ -73,11 +73,19 @@ export function computeMetrics(pins) {
 
     const reliability = 1 - clamp(medianRtt > 0 ? jitter / medianRtt : 1, 0, 1);
 
+    // Deliberately a low bar. A genuinely bad corner of the room IS jittery —
+    // that is the finding, not a fault in the measurement — and it already
+    // gets punished properly through jitter_score. Excluding it here would
+    // quietly delete the most useful spot the user measured. Only throw away
+    // samples that are pathological: jitter approaching the median itself,
+    // which means the probe never settled at all.
+    const usable = reliability >= 0.2;
+
     return {
       id: pin.id,
       x: pin.x,
       y: pin.y,
-      usable: reliability >= 0.5,
+      usable,
       median_rtt_ms: round(medianRtt),
       jitter_ms: round(jitter),
       mbps: round(mbps),

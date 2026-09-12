@@ -8,8 +8,10 @@ const $ = (id) => document.getElementById(id);
 
 const MIN_SPOTS = 3;
 const PING_COUNT = 9;          // first one is discarded
-const PAYLOAD_BYTES = 300_000;
-const PAYLOAD_RUNS = 2;
+const PAYLOAD_BYTES = 300_000;      // starting size; grows on a fast link
+const MAX_PAYLOAD_BYTES = 2_000_000; // matches the server's cap
+const PAYLOAD_RUNS = 3;             // attempts, not necessarily all used
+const MIN_TRANSFER_SECONDS = 0.25;  // below this the number is RTT, not bandwidth
 const MIN_PIN_ANIMATION_MS = 1100;
 
 const CATEGORY_META = {
@@ -115,9 +117,9 @@ async function timedPing() {
   return elapsed;
 }
 
-async function timedDownload() {
+async function timedDownload(bytes) {
   const t0 = performance.now();
-  const response = await fetch(`/api/payload?bytes=${PAYLOAD_BYTES}&cb=${Math.random()}`, {
+  const response = await fetch(`/api/payload?bytes=${bytes}&cb=${Math.random()}`, {
     cache: "no-store",
   });
   if (!response.ok) throw new Error(`payload ${response.status}`);
@@ -137,10 +139,23 @@ async function probeSpot() {
   for (let i = 0; i < PING_COUNT; i += 1) rtts.push(await timedPing());
   rtts.shift();
 
+  // Adaptive sizing. A transfer that finishes in a few milliseconds is not
+  // measuring bandwidth, it is measuring round-trip time — so on a fast link
+  // we re-run with a bigger payload until the transfer is long enough to mean
+  // something. On a slow spot the first run already takes long enough and we
+  // stop there, which keeps the worst corner of the room quick to measure.
   const runs = [];
-  for (let i = 0; i < PAYLOAD_RUNS; i += 1) runs.push(await timedDownload());
+  let bytes = PAYLOAD_BYTES;
+  for (let i = 0; i < PAYLOAD_RUNS; i += 1) {
+    const run = await timedDownload(bytes);
+    runs.push(run);
+    if (run.seconds > MIN_TRANSFER_SECONDS) break;
+    bytes = Math.min(bytes * 5, MAX_PAYLOAD_BYTES);
+  }
 
-  return { rtts, runs };
+  // Once a run is long enough to be meaningful, the short ones are noise.
+  const meaningful = runs.filter((r) => r.seconds > MIN_TRANSFER_SECONDS);
+  return { rtts, runs: meaningful.length ? meaningful : runs.slice(-1) };
 }
 
 /* ----------------------------------------------------------------- pins */
