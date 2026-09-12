@@ -1,6 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { betaTool } from "@anthropic-ai/sdk/helpers/beta/json-schema";
-
 import {
   computeMetrics,
   rankFor,
@@ -10,63 +7,51 @@ import {
   FLAT_SPREAD_THRESHOLD,
 } from "./metrics.js";
 import { analyzeRoomPhoto } from "./vision.js";
+import { createClient, hasCredentials, AGENT_MODEL } from "./llm.js";
 
-const AGENT_TIMEOUT_MS = 18_000;
+// Tuned against the free-tier model: each agent turn costs 1.5-4s and the loop
+// needs three of them, so 18s left no headroom. The vision call no longer sits
+// on the critical path (see the prefetch in recommend()), which buys most of
+// the difference back.
+const AGENT_TIMEOUT_MS = 25_000;
+const MAX_ITERATIONS = 6;
 const CATEGORIES = ["work", "gaming", "overall"];
 
-const SYSTEM_PROMPT = `You are Leher's recommendation agent.
+const SYSTEM_PROMPT = `You are Leher's recommendation agent. Someone photographed a room, stood at
+several spots in it, and ran a real network probe at each. Decide which spot
+suits which activity.
 
-Someone photographed a room, then stood at several spots in it and ran a real
-network probe at each one. You decide which spot suits which activity.
+You cannot see the photo — call analyze_room_photo for that. Do not do
+arithmetic yourself — call score_spots.
 
-You cannot see the photo. Call analyze_room_photo if you want to know what is
-in the room. You also must not do arithmetic in your head — call score_spots
-for the numbers.
+Turn 1: call analyze_room_photo AND score_spots for all three profiles
+("work", "gaming", "balanced") together. Turn 2: pin_zone_proximity.
+Turn 3: finalize_recommendations. Then reply only: done.
 
-Suggested order (analyze_room_photo and score_spots are independent, so call
-them in the same turn):
-  1. analyze_room_photo  — what is actually in this room, and where
-  2. score_spots         — once per profile: "work", "gaming", "balanced"
-  3. pin_zone_proximity  — which measured spot sits in which zone
-  4. finalize_recommendations — your answer
+Categories, one pin each:
+  work    — desk work and video calls; steadiness beats raw speed
+  gaming  — latency and jitter dominate, throughput barely matters
+  overall — best all-round connection
+One pin may win several. That is normal, not a failure.
 
-Pick exactly one pin for each of these three categories:
-  - "work"    : desk work and video calls. Steadiness beats raw speed.
-  - "gaming"  : latency and jitter dominate; throughput barely matters.
-  - "overall" : the best all-round connection in the room.
-The same pin may win more than one category. That is a normal outcome, not a
-failure — say so plainly when it happens.
+Judgement:
+- The numbers are ground truth. Never overrule a clearly better-measuring spot
+  because a zone label sounds nicer.
+- Zones say what a spot is FOR. When two pins measure close, the one in the
+  fitting zone wins — that is the call you are here to make.
+- overall_confidence below 0.4, or no zones: ignore the room entirely, use the
+  measurements, and talk only about the connection.
+- spread_verdict "flat": the spots are inside measurement noise. Do not invent
+  a winner — say the room is uniformly fine and to choose for comfort.
 
-How to weigh the two halves:
-- The numbers are the ground truth about the connection. Never overrule a
-  clearly better-measuring spot just because a zone label sounds nicer.
-- The zones are context about what the spot is actually FOR. When two pins
-  measure close, the one sitting in the fitting zone should win, and that is
-  the interesting judgement call you are here to make.
-- If overall_confidence from analyze_room_photo is below 0.4, or it returned no
-  zones, ignore the room entirely. Recommend on measurements alone and let the
-  reasons reflect that — talk about the connection, not about furniture you
-  cannot see.
-- If score_spots reports spread_verdict "flat", the spots are within
-  measurement noise. Do not manufacture a winner. Say the room is uniformly
-  fine and that they should choose for comfort.
+Each reason: ONE warm plain sentence, 8-16 words, like telling a friend.
+- Do NOT name the pin — the card already shows which one it is.
+- At most ONE number, only if it earns its place. This is not a readout.
+- Never mention signal strength, bars or dBm. We measured latency and
+  throughput, not signal.
 
-Writing the reasons:
-- One sentence, warm and plain, the way you would tell a friend. Around 8-16
-  words.
-- Mention the thing that actually decided it — "steady", "lowest ping",
-  "fastest", "right by your desk".
-- At most one number per reason, and only when it earns its place. This is not
-  a diagnostics readout.
-- Never mention Wi-Fi signal strength, bars, or dBm. Nothing here measured
-  signal strength; we measured real latency and throughput.
-
-Set confidence to "high" when the winner is clear on both numbers and context,
-"medium" when it is a close call or the zones were only somewhat useful, and
-"low" when you are working from measurements alone or the spread was flat.
-
-Call finalize_recommendations exactly once, with all three categories. After it
-returns, reply with nothing but the single word: done.`;
+confidence: "high" when clear on numbers and context, "medium" when close,
+"low" when measurements-only or the spread was flat.`;
 
 function buildPinSummary(metrics) {
   const usable = metrics.filter((m) => m.usable);
@@ -91,92 +76,125 @@ function buildPinSummary(metrics) {
     .join("\n");
 }
 
-/**
- * Tools are built per request so they can close over this session's photo and
- * measurements. Nothing is stored beyond the life of the request.
- */
-function buildTools(client, { photo, metrics, session }) {
-  const analyzeTool = betaTool({
-    name: "analyze_room_photo",
-    description:
-      "Look at the room photo and return the functional zones in it (desk, seating, bed, kitchen...) with approximate positions as percentages of the image, plus a confidence. Call this once.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
-    run: async () => {
-      if (!session.vision) {
-        session.vision = await analyzeRoomPhoto(client, photo);
-      }
-      return JSON.stringify(session.vision);
-    },
-  });
+/* ------------------------------------------------------------------ tools */
 
-  const scoreTool = betaTool({
-    name: "score_spots",
-    description:
-      "Score and rank every measured spot for one activity profile. Returns per-pin latency/jitter/throughput sub-scores, the weighted composite, the ranking, and whether the spread between spots is meaningful or flat (inside measurement noise).",
-    inputSchema: {
-      type: "object",
-      properties: {
-        profile: {
-          type: "string",
-          enum: Object.keys(PROFILES),
-          description:
-            "'work' weights steadiness, 'gaming' weights latency and jitter, 'balanced' weights raw throughput.",
-        },
-      },
-      required: ["profile"],
-      additionalProperties: false,
+const TOOL_SCHEMAS = [
+  {
+    type: "function",
+    function: {
+      name: "analyze_room_photo",
+      description:
+        "Look at the room photo and return the functional zones in it (desk, seating, bed, kitchen...) with approximate positions as percentages of the image, plus a confidence. Call this once.",
+      parameters: { type: "object", properties: {} },
     },
-    run: async ({ profile }) => {
-      const name = PROFILES[profile] ? profile : "balanced";
-      return JSON.stringify({
-        ...rankFor(metrics, name),
-        flat_spread_threshold: FLAT_SPREAD_THRESHOLD,
-        per_pin_detail: metrics.filter((m) => m.usable),
-      });
-    },
-  });
-
-  const proximityTool = betaTool({
-    name: "pin_zone_proximity",
-    description:
-      "For each measured spot, report which zone from analyze_room_photo it sits in, or the nearest one and how far away it is. Call analyze_room_photo first.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
-    run: async () => {
-      if (!session.vision) {
-        return JSON.stringify({
-          error: "Call analyze_room_photo first — there are no zones to compare against yet.",
-        });
-      }
-      return JSON.stringify({ proximity: pinZoneProximity(metrics, session.vision.zones) });
-    },
-  });
-
-  const finalizeTool = betaTool({
-    name: "finalize_recommendations",
-    description:
-      "Submit the final answer: exactly one pin per category, each with a one-line human reason. Rejects unknown pins, unknown categories, and missing categories — fix anything it reports and call it again.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        recommendations: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              category: { type: "string", enum: CATEGORIES },
-              pin_id: { type: "string" },
-              reason: { type: "string" },
-              confidence: { type: "string", enum: ["high", "medium", "low"] },
-            },
-            required: ["category", "pin_id", "reason", "confidence"],
-            additionalProperties: false,
+  },
+  {
+    type: "function",
+    function: {
+      name: "score_spots",
+      description:
+        "Score and rank every measured spot for one activity profile. Returns per-pin latency/jitter/throughput sub-scores, the weighted composite, the ranking, and whether the spread between spots is meaningful or flat (inside measurement noise).",
+      parameters: {
+        type: "object",
+        properties: {
+          profile: {
+            type: "string",
+            enum: Object.keys(PROFILES),
+            description:
+              "'work' weights steadiness, 'gaming' weights latency and jitter, 'balanced' weights raw throughput.",
           },
         },
+        required: ["profile"],
       },
-      required: ["recommendations"],
-      additionalProperties: false,
     },
-    run: async ({ recommendations }) => {
+  },
+  {
+    type: "function",
+    function: {
+      name: "pin_zone_proximity",
+      description:
+        "For each measured spot, report which zone from analyze_room_photo it sits in, or the nearest one and how far away. Call analyze_room_photo first.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "finalize_recommendations",
+      description:
+        "Submit the final answer: exactly one pin per category, each with a one-line human reason. Rejects unknown pins, unknown categories and missing categories — fix anything it reports and call it again.",
+      parameters: {
+        type: "object",
+        properties: {
+          recommendations: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                category: { type: "string", enum: CATEGORIES },
+                pin_id: { type: "string" },
+                reason: { type: "string" },
+                confidence: { type: "string", enum: ["high", "medium", "low"] },
+              },
+              required: ["category", "pin_id", "reason", "confidence"],
+            },
+          },
+        },
+        required: ["recommendations"],
+      },
+    },
+  },
+];
+
+function buildHandlers(client, { photo, metrics, session }) {
+  return {
+    // Awaits the prefetch started in recommend(), so by the time the model
+    // asks for zones the answer is usually already sitting there.
+    analyze_room_photo: async () => {
+      session.vision = await session.visionPromise;
+      return session.vision;
+    },
+
+    // Kept deliberately lean. Every tool result is resent with each subsequent
+    // turn, so verbose JSON here is paid for three times over against a 7000
+    // input-tokens-per-minute ceiling.
+    score_spots: async ({ profile }) => {
+      const name = PROFILES[profile] ? profile : "balanced";
+      const { ranking, spread, spread_verdict, excluded_pins } = rankFor(metrics, name);
+      return {
+        profile: name,
+        ranking: ranking.map((r) => ({
+          pin: r.pin_id,
+          score: Math.round(r.composite),
+          ms: r.median_rtt_ms,
+          jitter: r.jitter_ms,
+          mbps: r.mbps,
+        })),
+        spread: Math.round(spread),
+        spread_verdict,
+        flat_below: FLAT_SPREAD_THRESHOLD,
+        ...(excluded_pins.length ? { excluded_pins } : {}),
+      };
+    },
+
+    pin_zone_proximity: async () => {
+      session.vision ??= await session.visionPromise;
+      if (!session.vision?.zones?.length) {
+        return { error: "No zones were readable in this photo — recommend on the measurements alone." };
+      }
+      // Slimmed: the model needs pin -> zone and how close, not prose.
+      return {
+        proximity: pinZoneProximity(metrics, session.vision.zones).map((p) => ({
+          pin: p.pin_id,
+          zone: p.zone,
+          in: p.containment === "inside",
+          away_pct: p.distance_pct,
+        })),
+        zone_confidence: session.vision.overall_confidence,
+      };
+    },
+
+    finalize_recommendations: async ({ recommendations }) => {
       const usableIds = new Set(metrics.filter((m) => m.usable).map((m) => m.id));
       const problems = [];
       const seen = new Set();
@@ -200,33 +218,96 @@ function buildTools(client, { photo, metrics, session }) {
       const missing = CATEGORIES.filter((c) => !seen.has(c));
       if (missing.length) problems.push(`Missing categories: ${missing.join(", ")}.`);
 
-      if (problems.length) {
-        return JSON.stringify({ ok: false, problems });
-      }
+      if (problems.length) return { ok: false, problems };
 
       session.recommendations = recommendations;
-      return JSON.stringify({ ok: true });
+      return { ok: true };
     },
-  });
-
-  return [analyzeTool, scoreTool, proximityTool, finalizeTool];
+  };
 }
 
-/** Attach pixel coordinates so the frontend can redraw pins without a lookup. */
+/* ------------------------------------------------------------------- loop */
+
+async function runAgent(client, { photo, metrics, session }) {
+  const handlers = buildHandlers(client, { photo, metrics, session });
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: buildPinSummary(metrics) },
+  ];
+
+  for (let turn = 0; turn < MAX_ITERATIONS; turn += 1) {
+    const started = Date.now();
+    const response = await client.chat.completions.create({
+      model: AGENT_MODEL,
+      max_tokens: 2000,
+      reasoning_effort: "none",
+      tools: TOOL_SCHEMAS,
+      messages,
+    });
+
+    const message = response.choices?.[0]?.message;
+    if (!message) break;
+    messages.push(message);
+
+    const calls = message.tool_calls ?? [];
+
+    if (process.env.LEHER_TRACE) {
+      console.log(
+        `  [turn ${turn + 1}] ${Date.now() - started}ms  ` +
+          `in ${response.usage?.prompt_tokens ?? "?"} / out ${response.usage?.completion_tokens ?? "?"} tok  ` +
+          `calls: ${calls.map((c) => c.function.name).join(", ") || "(none)"}` +
+          (message.content ? `  text: ${JSON.stringify(message.content.slice(0, 90))}` : "")
+      );
+    }
+
+    if (calls.length === 0) break;
+
+    // All the tool calls in one assistant turn come back in one batch — the
+    // model is allowed to fire analyze_room_photo and score_spots together.
+    for (const call of calls) {
+      const handler = handlers[call.function.name];
+      let result;
+
+      if (!handler) {
+        result = { error: `Unknown tool "${call.function.name}".` };
+      } else {
+        try {
+          const args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+          result = await handler(args);
+        } catch (err) {
+          // Malformed arguments are the model's problem to fix, not a crash.
+          result = { error: `Could not run that call: ${err.message}` };
+        }
+      }
+
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: JSON.stringify(result),
+      });
+    }
+
+    if (session.recommendations) break;
+  }
+}
+
+/* ---------------------------------------------------------------- assemble */
+
 function decorate(recommendations, metrics, mode, vision) {
   const byId = new Map(metrics.map((m) => [m.id, m]));
+  const trusted = (vision?.overall_confidence ?? 0) >= 0.4;
+
   return {
     mode,
     degraded: mode !== "agent",
-    room_summary: vision?.overall_confidence >= 0.4 ? vision.room_summary : "",
-    zones: vision?.overall_confidence >= 0.4 ? vision.zones : [],
+    room_summary: trusted ? vision.room_summary : "",
+    zones: trusted ? vision.zones : [],
     metrics: metrics.filter((m) => m.usable),
     unreliable: metrics.filter((m) => !m.usable).map((m) => m.id),
     recommendations: recommendations
       .map((rec) => {
         const pin = byId.get(rec.pin_id);
-        if (!pin) return null;
-        return { ...rec, x: pin.x, y: pin.y };
+        return pin ? { ...rec, x: pin.x, y: pin.y } : null;
       })
       .filter(Boolean),
   };
@@ -236,39 +317,34 @@ export async function recommend({ photo, pins }) {
   const metrics = computeMetrics(pins);
   const usable = metrics.filter((m) => m.usable);
 
-  if (usable.length < 2) {
+  if (usable.length < 2 || !hasCredentials()) {
+    if (!hasCredentials()) console.warn("[agent] no API key — deterministic result only");
     return decorate(deterministicRecommendations(metrics), metrics, "numbers", null);
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn("[agent] no API key — deterministic result only");
-    return decorate(deterministicRecommendations(metrics), metrics, "numbers", null);
-  }
-
-  const client = new Anthropic({ timeout: AGENT_TIMEOUT_MS, maxRetries: 1 });
+  const client = createClient({ timeout: AGENT_TIMEOUT_MS });
   const session = { vision: null, recommendations: null };
+
+  // Start looking at the photo now, before the model has asked. The agent's
+  // first turn and the vision call then run concurrently instead of in series,
+  // which is most of the difference between finishing inside the budget and
+  // timing out. A rejection here must not become an unhandled rejection.
+  session.visionPromise = analyzeRoomPhoto(client, photo).catch((err) => ({
+    zones: [],
+    overall_confidence: 0,
+    room_summary: "",
+    error: err?.message ?? "vision failed",
+  }));
 
   // The whole agent is on a wall-clock budget. Judges will not wait, and a
   // slightly duller answer that arrives beats a better one that doesn't.
-  const budget = new Promise((resolve) =>
-    setTimeout(() => resolve("timeout"), AGENT_TIMEOUT_MS)
-  );
+  const budget = new Promise((resolve) => setTimeout(() => resolve("timeout"), AGENT_TIMEOUT_MS));
 
   try {
-    const run = (async () => {
-      await client.beta.messages.toolRunner({
-        model: "claude-opus-5",
-        max_tokens: 4096,
-        output_config: { effort: "low" },
-        system: SYSTEM_PROMPT,
-        tools: buildTools(client, { photo, metrics, session }),
-        messages: [{ role: "user", content: buildPinSummary(metrics) }],
-      });
-      return "done";
-    })();
-
-    const outcome = await Promise.race([run, budget]);
-
+    const outcome = await Promise.race([
+      runAgent(client, { photo, metrics, session }).then(() => "done"),
+      budget,
+    ]);
     if (outcome === "timeout") console.warn("[agent] timed out, falling back to numbers");
 
     if (session.recommendations?.length === CATEGORIES.length) {

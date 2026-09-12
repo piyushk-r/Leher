@@ -6,3 +6,4 @@ render-key.txt
 *-key.txt
 .DS_Store
 npm-debug.log*
+_agent-test.mjs

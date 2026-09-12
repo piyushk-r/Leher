@@ -18,8 +18,8 @@ Full product and build spec: [SPEC.md](SPEC.md).
 
 ```bash
 npm install
-export ANTHROPIC_API_KEY=sk-ant-...   # optional; without it you get the
-                                      # deterministic numbers-only mode
+cp .env.example .env                  # then paste your GROQ_API_KEY into it
+                                      # without a key you get numbers-only mode
 npm start                             # http://localhost:3000
 ```
 
@@ -31,8 +31,8 @@ the room. On the same Wi-Fi, `http://<your-machine-ip>:3000` works.
 1. Push this repo to GitHub.
 2. Render → **New → Web Service** → connect the repo. `render.yaml` supplies
    the build command, start command and health check path.
-3. Add the environment variable **`ANTHROPIC_API_KEY`** in the Render
-   dashboard. Never commit it.
+3. Add the environment variable **`GROQ_API_KEY`** in the Render dashboard.
+   Never commit it.
 4. Use a **paid instance**. The free tier spins down after inactivity, and the
    30–50 s cold start both stalls the demo and makes the first spot the user
    taps look catastrophically slow.
@@ -54,7 +54,9 @@ say the room is uniformly fine rather than invent a winner.
 
 ### The agent — [`agent/run.js`](agent/run.js)
 
-A real tool-using loop on `claude-opus-5`. The orchestrating model is given
+A real tool-using loop on `qwen/qwen3.8-27b`, served by Groq behind an
+OpenAI-compatible endpoint. It is the one model on Groq's free tier that does
+both things this app needs — reads images *and* calls tools. The orchestrating model is given
 **no image at all** — pin coordinates and numbers only — so the vision tool is
 load-bearing rather than decorative; it cannot shortcut around it.
 
@@ -92,3 +94,28 @@ There is no path to a blank screen.
 
 No database, no auth, no session storage. The photo lives in memory for the
 duration of one request and is never written to disk.
+
+## Free-tier rate limits — read this before demoing
+
+Groq's free tier caps **input at 7,000 tokens per minute** for this model. One
+complete Leher run costs roughly 5–6K input tokens (a 512px photo for the
+vision call, plus three agent turns that each resend the conversation). So:
+
+- **One run fits comfortably. Two runs inside the same minute do not.**
+- Leave ~60 seconds between full runs when rehearsing, or the second one gets
+  a 429 and drops to numbers-only mode.
+- The client does not retry on 429 — a retry means a ~12 second wait, which
+  would blow the agent's 25 s budget. Failing straight to the deterministic
+  answer gets the user a result far sooner.
+- Groq's Dev Tier lifts the cap if this becomes a problem on demo day.
+
+This is also why the photo is resized to 512px rather than 1024px: vision
+tokens scale with area, so halving the edge quarters the cost and buys about
+2,000 tokens of headroom.
+
+## Switching model provider
+
+Everything provider-specific lives in [`agent/llm.js`](agent/llm.js) — base
+URL, model ids, client construction. The tool definitions, the agent loop, the
+scoring and the fallbacks are all provider-agnostic, so moving to another
+OpenAI-compatible endpoint is a three-line change.

@@ -20,7 +20,7 @@ const NO_STORE = "no-store, no-cache, must-revalidate, max-age=0";
 
 app.get("/health", (_req, res) => {
   res.set("Cache-Control", NO_STORE);
-  res.json({ ok: true, agent: Boolean(process.env.ANTHROPIC_API_KEY), ts: Date.now() });
+  res.json({ ok: true, agent: Boolean(process.env.GROQ_API_KEY), ts: Date.now() });
 });
 
 /* ----------------------------------------------------------- probe targets */
@@ -88,7 +88,7 @@ app.use(
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Leher listening on :${port}`);
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn("ANTHROPIC_API_KEY is not set — running in numbers-only mode.");
+  if (!process.env.GROQ_API_KEY) {
+    console.warn("GROQ_API_KEY is not set — running in numbers-only mode.");
   }
 });

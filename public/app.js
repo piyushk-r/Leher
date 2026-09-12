@@ -65,11 +65,15 @@ async function decode(file) {
 }
 
 /**
- * Resize before upload. A phone photo is 3-8 MB; at 1024px/q0.72 it is ~150 KB
- * and about a thousand vision tokens, which keeps the agent call fast and the
- * page responsive.
+ * Resize before upload. A phone photo is 3-8 MB; at 512px/q0.72 it is ~45 KB.
+ *
+ * 512 rather than 1024 is a token-budget decision, not a quality one: vision
+ * tokens scale with area, so halving the edge quarters the cost, and the free
+ * tier allows only 7000 input tokens per minute across the whole run. Zone
+ * boxes are coarse rectangles — 512px is ample for "there is a desk on the
+ * left" and buys roughly 2000 tokens of headroom.
  */
-async function resizePhoto(file, maxEdge = 1024, quality = 0.72) {
+async function resizePhoto(file, maxEdge = 512, quality = 0.72) {
   const source = await decode(file);
   const sw = source.width || source.naturalWidth;
   const sh = source.height || source.naturalHeight;

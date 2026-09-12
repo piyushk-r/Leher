@@ -11,5 +11,5 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "20"
-      - key: ANTHROPIC_API_KEY
+      - key: GROQ_API_KEY
         sync: false        # set this in the Render dashboard, never in git
