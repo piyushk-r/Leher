@@ -98,7 +98,7 @@ duration of one request and is never written to disk.
 ## Free-tier rate limits — read this before demoing
 
 Groq's free tier caps **input at 7,000 tokens per minute** for this model. One
-complete Leher run costs roughly 5–6K input tokens (a 512px photo for the
+complete Leher run costs roughly 5.9K input tokens (a 384px photo for the
 vision call, plus three agent turns that each resend the conversation). So:
 
 - **One run fits comfortably. Two runs inside the same minute do not.**

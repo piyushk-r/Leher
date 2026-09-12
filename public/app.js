@@ -65,15 +65,20 @@ async function decode(file) {
 }
 
 /**
- * Resize before upload. A phone photo is 3-8 MB; at 512px/q0.72 it is ~45 KB.
+ * Resize before upload. A phone photo is 3-8 MB; at 384px/q0.72 it is ~28 KB.
  *
- * 512 rather than 1024 is a token-budget decision, not a quality one: vision
- * tokens scale with area, so halving the edge quarters the cost, and the free
- * tier allows only 7000 input tokens per minute across the whole run. Zone
- * boxes are coarse rectangles — 512px is ample for "there is a desk on the
- * left" and buys roughly 2000 tokens of headroom.
+ * The edge length is a rate-limit decision, not a quality one. Measured
+ * against Groq's free tier: a 512px photo is charged 4608 input tokens — note
+ * that is nearly double the 2531 the API reports as prompt_tokens, because
+ * images are billed at a higher rate — and the agent loop costs another ~3300.
+ * Against a 7000 input-tokens-per-minute cap that is 7908, so every single run
+ * would 429 and fall back to numbers-only.
+ *
+ * Vision cost scales with area, so 384px costs about 2592 and leaves ~1100
+ * tokens of headroom. Zone boxes are coarse rectangles — "there is a desk on
+ * the left" survives the smaller image comfortably.
  */
-async function resizePhoto(file, maxEdge = 512, quality = 0.72) {
+async function resizePhoto(file, maxEdge = 384, quality = 0.72) {
   const source = await decode(file);
   const sw = source.width || source.naturalWidth;
   const sh = source.height || source.naturalHeight;
