@@ -229,6 +229,53 @@ h2 { font-size: 1.35rem; }
 .card__reason { margin: 0; color: var(--muted); font-size: .9rem; }
 .card__meta { margin: 6px 0 0; font-size: .75rem; color: #9A948B; }
 
+/* ------------------------------------------------- per-spot verdict list */
+
+.section-title {
+  font-size: .95rem;
+  font-weight: 600;
+  margin: 28px 0 4px;
+  letter-spacing: -0.01em;
+}
+
+.spot {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 13px 14px;
+  margin-top: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--card);
+  cursor: pointer;
+  transition: border-color .15s ease, transform .12s ease;
+}
+.spot:active { transform: scale(.99); }
+.spot--active { border-color: var(--accent-b); }
+
+.spot__id {
+  flex: none;
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  min-width: 38px;
+}
+.spot__headline { font-weight: 600; font-size: .9rem; margin: 0 0 2px; }
+.spot__note { margin: 0; color: var(--muted); font-size: .85rem; }
+.spot__meta { margin: 5px 0 0; font-size: .72rem; color: #9A948B; }
+
+/* a measured spot that did not win a category */
+.pin--plain {
+  width: 20px; height: 20px;
+  background: rgba(255,255,255,.85);
+  box-shadow: 0 2px 6px rgba(28,28,30,.22);
+  cursor: pointer;
+}
+.pin--plain .pin__core { width: 8px; height: 8px; opacity: .55; }
+.pin--highlight { outline: 2px solid var(--accent-b); outline-offset: 3px; }
+
 .numbers { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 16px; }
 .numbers summary {
   cursor: pointer;

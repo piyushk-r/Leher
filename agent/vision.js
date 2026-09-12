@@ -11,7 +11,7 @@
  * open model than asking for raw JSON and hoping.
  */
 
-import { VISION_MODEL } from "./llm.js";
+import { VISION_MODEL, VISION_REASONING } from "./llm.js";
 
 const ZONE_LABELS = [
   "workspace",
@@ -144,7 +144,7 @@ export async function analyzeRoomPhoto(client, photo, { timeoutMs = 12_000 } = {
       {
         model: VISION_MODEL,
         max_tokens: 1500,
-        reasoning_effort: "none",
+        reasoning_effort: VISION_REASONING,
         tools: [REPORT_ZONES_TOOL],
         tool_choice: { type: "function", function: { name: "report_zones" } },
         messages: [

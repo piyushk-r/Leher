@@ -65,20 +65,21 @@ async function decode(file) {
 }
 
 /**
- * Resize before upload. A phone photo is 3-8 MB; at 384px/q0.72 it is ~28 KB.
+ * Resize before upload. A phone photo is 3-8 MB; at 640px/q0.72 it is ~60 KB.
  *
- * The edge length is a rate-limit decision, not a quality one. Measured
- * against Groq's free tier: a 512px photo is charged 4608 input tokens — note
- * that is nearly double the 2531 the API reports as prompt_tokens, because
- * images are billed at a higher rate — and the agent loop costs another ~3300.
- * Against a 7000 input-tokens-per-minute cap that is 7908, so every single run
- * would 429 and fall back to numbers-only.
+ * The edge length is purely an upload-speed and quality tradeoff. It is NOT a
+ * token decision, which is worth stating because the obvious assumption is
+ * wrong: the model tiles images to a fixed token count, so a 384px photo and a
+ * 512px photo both report exactly 2531 prompt_tokens. Shrinking the image buys
+ * nothing against the rate limit. (That is handled by running the vision call
+ * and the agent loop on different models — see agent/llm.js.)
  *
- * Vision cost scales with area, so 384px costs about 2592 and leaves ~1100
- * tokens of headroom. Zone boxes are coarse rectangles — "there is a desk on
- * the left" survives the smaller image comfortably.
+ * So the only reason not to send more pixels is that the upload happens over
+ * the very Wi-Fi being measured, sometimes from the weakest corner of the room.
+ * 640px keeps that quick while giving vision enough detail to tell a desk from
+ * a sideboard.
  */
-async function resizePhoto(file, maxEdge = 384, quality = 0.72) {
+async function resizePhoto(file, maxEdge = 640, quality = 0.72) {
   const source = await decode(file);
   const sw = source.width || source.naturalWidth;
   const sh = source.height || source.naturalHeight;
@@ -293,6 +294,24 @@ function renderResults(payload) {
     byPin.get(rec.pin_id).cats.push(rec.category);
   }
 
+  const pinEls = new Map();
+
+  // Every spot the user measured gets drawn, not just the winners — they
+  // walked to all of them. Non-winners stay quiet so the three labelled
+  // badges still read first.
+  for (const spot of payload.spots ?? []) {
+    if (byPin.has(spot.pin_id)) continue;
+    const el = document.createElement("div");
+    el.className = "pin pin--plain";
+    el.style.left = `${spot.x * 100}%`;
+    el.style.top = `${spot.y * 100}%`;
+    el.title = `${spot.pin_id} — ${spot.headline}`;
+    el.dataset.pin = spot.pin_id;
+    el.innerHTML = '<span class="pin__core"></span>';
+    pinsEl.append(el);
+    pinEls.set(spot.pin_id, el);
+  }
+
   let n = 0;
   for (const [pinId, info] of byPin) {
     const el = document.createElement("div");
@@ -300,10 +319,12 @@ function renderResults(payload) {
     el.style.left = `${info.x * 100}%`;
     el.style.top = `${info.y * 100}%`;
     el.style.animationDelay = `${n * 140}ms`;
+    el.dataset.pin = pinId;
     el.innerHTML =
       `<span class="emoji">${info.cats.map((c) => CATEGORY_META[c].emoji).join("")}</span>` +
       `<span>${pinId}</span>`;
     pinsEl.append(el);
+    pinEls.set(pinId, el);
     n += 1;
   }
 
@@ -323,6 +344,40 @@ function renderResults(payload) {
     card.querySelector(".card__reason").textContent = rec.reason;
     cardsEl.append(card);
   });
+
+  // --- per-spot verdicts: what you could actually do standing there ---
+  const listEl = $("spot-list");
+  listEl.innerHTML = "";
+  const spots = payload.spots ?? [];
+  $("spots-title").hidden = spots.length === 0;
+
+  const cardEls = new Map();
+  for (const spot of spots) {
+    const row = document.createElement("div");
+    row.className = "spot";
+    row.dataset.pin = spot.pin_id;
+    row.innerHTML =
+      `<span class="spot__id">${spot.pin_id.replace("Pin ", "#")}</span>` +
+      `<div><p class="spot__headline"></p><p class="spot__note"></p>` +
+      `<p class="spot__meta">${spot.median_rtt_ms} ms · ${spot.jitter_ms} ms jitter · ${spot.mbps} Mbps</p></div>`;
+    row.querySelector(".spot__headline").textContent = spot.headline;
+    row.querySelector(".spot__note").textContent = spot.note;
+    listEl.append(row);
+    cardEls.set(spot.pin_id, row);
+  }
+
+  // Tapping either half highlights the other, so a spot in the list can be
+  // located on the photo and vice versa.
+  const focus = (pinId) => {
+    for (const [id, el] of pinEls) el.classList.toggle("pin--highlight", id === pinId);
+    for (const [id, el] of cardEls) el.classList.toggle("spot--active", id === pinId);
+    cardEls.get(pinId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  for (const [id, el] of cardEls) el.addEventListener("click", () => focus(id));
+  pinsEl.onclick = (event) => {
+    const pin = event.target.closest("[data-pin]");
+    if (pin) focus(pin.dataset.pin);
+  };
 
   const note = $("results-note");
   if (payload.degraded) {
@@ -376,6 +431,17 @@ function offlineFallback(measured) {
     ],
     metrics: measured.map((p) => ({
       id: p.id,
+      median_rtt_ms: Math.round(median(p.samples.rtts)),
+      jitter_ms: "—",
+      mbps: "—",
+    })),
+    spots: measured.map((p) => ({
+      pin_id: p.id,
+      x: p.x,
+      y: p.y,
+      headline: "Measured",
+      note: `About ${Math.round(median(p.samples.rtts))} ms ping here.`,
+      works: [],
       median_rtt_ms: Math.round(median(p.samples.rtts)),
       jitter_ms: "—",
       mbps: "—",

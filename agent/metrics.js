@@ -172,6 +172,72 @@ export function pinZoneProximity(metrics, zones) {
   });
 }
 
+/* ---------------------------------------------------- what works at a spot */
+
+/**
+ * What you can actually do at a spot, from published requirements for each
+ * activity rather than invented thresholds.
+ *
+ * This is deliberately deterministic. Per-spot advice is the part of the
+ * product people will read most closely, so it has to survive the agent being
+ * rate-limited or unavailable — the LLM adds room-aware colour on top, it is
+ * not the source of truth.
+ */
+const ACTIVITIES = [
+  { key: "messaging",   label: "messaging",          mbps: 0.5, rtt: 600, jitter: 200 },
+  { key: "browsing",    label: "browsing",           mbps: 1.5, rtt: 400, jitter: 150 },
+  { key: "calls",       label: "video calls",        mbps: 3,   rtt: 200, jitter: 30 },
+  { key: "hd",          label: "HD streaming",       mbps: 6,   rtt: 400, jitter: 150 },
+  { key: "gaming",      label: "online gaming",      mbps: 3,   rtt: 80,  jitter: 20 },
+  { key: "uhd",         label: "4K streaming",       mbps: 25,  rtt: 400, jitter: 150 },
+  { key: "downloads",   label: "big downloads",      mbps: 20,  rtt: 400, jitter: 200 },
+];
+
+export function capabilities(metric) {
+  const good = [];
+  const poor = [];
+  for (const a of ACTIVITIES) {
+    const ok = metric.mbps >= a.mbps && metric.median_rtt_ms <= a.rtt && metric.jitter_ms <= a.jitter;
+    (ok ? good : poor).push(a.label);
+  }
+  return { good, poor };
+}
+
+/**
+ * A 2-4 word label for what a spot is for, named after the most demanding
+ * thing that actually works there. Used verbatim when the agent is
+ * unavailable, so it has to stand on its own.
+ */
+export function spotHeadline(metric) {
+  const has = new Set(capabilities(metric).good);
+
+  if (has.has("online gaming") && has.has("4K streaming")) return "Anything you like";
+  if (has.has("4K streaming")) return "Streaming and downloads";
+  if (has.has("online gaming")) return "Gaming and calls";
+  if (has.has("video calls") && has.has("HD streaming")) return "Calls and streaming";
+  if (has.has("video calls")) return "Calls and work";
+  if (has.has("HD streaming")) return "Streaming only";
+  if (has.has("browsing")) return "Light browsing";
+  if (has.has("messaging")) return "Messaging only";
+  return "Barely usable";
+}
+
+/** A plain-language line for one spot, with no LLM involved. */
+export function describeSpot(metric) {
+  const { good } = capabilities(metric);
+
+  if (good.length === 0) return "Too weak to rely on — messages might get through.";
+  if (good.length >= 6) return "Handles anything — 4K, calls and gaming all fine here.";
+
+  // Name the most demanding things that work, not everything that works.
+  const headline = good.slice(-3).reverse();
+  const list =
+    headline.length === 1
+      ? headline[0]
+      : `${headline.slice(0, -1).join(", ")} and ${headline[headline.length - 1]}`;
+  return `Good for ${list}.`;
+}
+
 /**
  * The answer we can always give, with no LLM involved at all. This is layer 3
  * of the degradation plan and the safety net the whole demo rests on.
