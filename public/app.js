@@ -401,6 +401,14 @@ function renderResults(payload) {
       )
       .join("");
   $("numbers").hidden = payload.metrics.length === 0;
+
+  // Explain the floor. Every ping includes the trip to our server, which may
+  // be far from the user — without saying so, a 94ms reading looks like their
+  // Wi-Fi is broken when it is just geography.
+  const baseline = payload.metrics.find((m) => m.baseline_rtt_ms)?.baseline_rtt_ms;
+  $("numbers-note").textContent = baseline
+    ? `Ping includes about ${Math.round(baseline)} ms to reach our test server, which is the same from every spot — we compare spots by what they add on top. Measured latency and throughput, not Wi-Fi signal strength.`
+    : "Measured latency and throughput from your browser — not Wi-Fi signal strength.";
 }
 
 const median = (xs) => {

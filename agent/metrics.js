@@ -26,8 +26,31 @@ export function mad(xs) {
 
 /* ------------------------------------------------------------- sub-scores */
 
-/** <=30ms is excellent, >=250ms is unusable. Linear between. */
-export const latencyScore = (rttMs) => (100 * (250 - clamp(rttMs, 30, 250))) / 220;
+/**
+ * Latency is scored on the EXCESS over the room's best spot, not the raw
+ * round trip.
+ *
+ * Every measurement carries a fixed floor: the trip from the phone to
+ * wherever this app is deployed. Measured from India against a Singapore
+ * instance that floor is ~94ms, and real readings came back 94 / 97 / 105ms —
+ * an 11ms spread sitting on a 94ms base. Scored raw, all three spots look
+ * equally mediocre and the thing we actually set out to measure, the
+ * difference between one corner and another, is swamped.
+ *
+ * The floor is identical for every pin, so subtracting it changes no ranking
+ * while restoring the resolution. 0ms of excess is the best spot in the room;
+ * 60ms worse than that is a bad corner.
+ */
+export const latencyScore = (excessMs) => (100 * (60 - clamp(excessMs, 0, 60))) / 60;
+
+/**
+ * A round trip to a service near the user, assumed when judging what a spot
+ * can actually do. Our probe target may be a continent away; their video call
+ * and game server are not. Without this the classifier says gaming works
+ * nowhere purely because the test server is far, which is a statement about
+ * our hosting, not about their room.
+ */
+export const NEARBY_SERVER_RTT_MS = 25;
 
 /** <=5ms of jitter is imperceptible, >=60ms breaks calls and games. */
 export const jitterScore = (jitterMs) => (100 * (60 - clamp(jitterMs, 5, 60))) / 55;
@@ -54,6 +77,28 @@ export const FLAT_SPREAD_THRESHOLD = 8;
 /* --------------------------------------------------------------- metrics */
 
 export function computeMetrics(pins) {
+  const raw = rawMetrics(pins);
+
+  // The floor is the best round trip anyone achieved in this room — the part
+  // of every reading that is the network path, not the spot.
+  const usable = raw.filter((m) => m.usable);
+  const baseline = usable.length ? Math.min(...usable.map((m) => m.median_rtt_ms)) : 0;
+
+  return raw.map((m) => {
+    if (!m.usable) return m;
+    const excess = round(m.median_rtt_ms - baseline);
+    return {
+      ...m,
+      baseline_rtt_ms: round(baseline),
+      excess_rtt_ms: excess,
+      // What this spot would feel like against a service near the user.
+      effective_rtt_ms: round(excess + NEARBY_SERVER_RTT_MS),
+      latency_score: round(latencyScore(excess)),
+    };
+  });
+}
+
+function rawMetrics(pins) {
   return pins.map((pin) => {
     const rtts = (pin.samples?.rtts ?? []).filter((n) => Number.isFinite(n) && n >= 0);
     const runs = (pin.samples?.runs ?? []).filter(
@@ -89,7 +134,7 @@ export function computeMetrics(pins) {
       median_rtt_ms: round(medianRtt),
       jitter_ms: round(jitter),
       mbps: round(mbps),
-      latency_score: round(latencyScore(medianRtt)),
+      latency_score: 0, // replaced in computeMetrics once the baseline is known
       jitter_score: round(jitterScore(jitter)),
       throughput_score: round(throughputScore(mbps)),
       reliability: round(reliability, 2),
@@ -196,8 +241,11 @@ const ACTIVITIES = [
 export function capabilities(metric) {
   const good = [];
   const poor = [];
+  // effective_rtt_ms strips the fixed path to our probe target and assumes a
+  // service near the user; fall back to the raw figure if it is absent.
+  const rtt = metric.effective_rtt_ms ?? metric.median_rtt_ms;
   for (const a of ACTIVITIES) {
-    const ok = metric.mbps >= a.mbps && metric.median_rtt_ms <= a.rtt && metric.jitter_ms <= a.jitter;
+    const ok = metric.mbps >= a.mbps && rtt <= a.rtt && metric.jitter_ms <= a.jitter;
     (ok ? good : poor).push(a.label);
   }
   return { good, poor };
