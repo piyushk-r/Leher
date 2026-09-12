@@ -9,10 +9,11 @@ import {
 import { analyzeRoomPhoto } from "./vision.js";
 import { createClient, hasCredentials, AGENT_MODEL } from "./llm.js";
 
-// Tuned against the free-tier model: each agent turn costs 1.5-4s and the loop
-// needs three of them, so 18s left no headroom. The vision call no longer sits
-// on the critical path (see the prefetch in recommend()), which buys most of
-// the difference back.
+// Tuned against the free tier, where the binding constraint is 7000 input
+// tokens per minute rather than latency. A three-turn loop cost ~8200 tokens
+// and blew the limit on its own, so the loop is now two turns: the prefetched
+// vision call lets pin_zone_proximity be batched into turn 1 with everything
+// else, leaving turn 2 to do nothing but finalise.
 const AGENT_TIMEOUT_MS = 25_000;
 const MAX_ITERATIONS = 6;
 const CATEGORIES = ["work", "gaming", "overall"];
@@ -24,9 +25,17 @@ suits which activity.
 You cannot see the photo — call analyze_room_photo for that. Do not do
 arithmetic yourself — call score_spots.
 
-Turn 1: call analyze_room_photo AND score_spots for all three profiles
-("work", "gaming", "balanced") together. Turn 2: pin_zone_proximity.
-Turn 3: finalize_recommendations. Then reply only: done.
+Work in exactly TWO turns. This matters — a third turn exceeds the rate limit
+and the user gets a worse answer.
+
+Turn 1: call ALL FIVE of these at once, in one message —
+  analyze_room_photo
+  score_spots("work"), score_spots("gaming"), score_spots("balanced")
+  pin_zone_proximity
+pin_zone_proximity does not need analyze_room_photo to have returned first;
+call it in the same batch.
+
+Turn 2: finalize_recommendations. Then reply only: done.
 
 Categories, one pin each:
   work    — desk work and video calls; steadiness beats raw speed
@@ -84,7 +93,7 @@ const TOOL_SCHEMAS = [
     function: {
       name: "analyze_room_photo",
       description:
-        "Look at the room photo and return the functional zones in it (desk, seating, bed, kitchen...) with approximate positions as percentages of the image, plus a confidence. Call this once.",
+        "Zones visible in the room photo (desk, seating, bed, kitchen...), as percentages of the image, with confidence.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -93,7 +102,7 @@ const TOOL_SCHEMAS = [
     function: {
       name: "score_spots",
       description:
-        "Score and rank every measured spot for one activity profile. Returns per-pin latency/jitter/throughput sub-scores, the weighted composite, the ranking, and whether the spread between spots is meaningful or flat (inside measurement noise).",
+        "Rank the measured spots for one activity profile. Returns the ranking and whether the spread is meaningful or flat (inside noise).",
       parameters: {
         type: "object",
         properties: {
@@ -101,7 +110,7 @@ const TOOL_SCHEMAS = [
             type: "string",
             enum: Object.keys(PROFILES),
             description:
-              "'work' weights steadiness, 'gaming' weights latency and jitter, 'balanced' weights raw throughput.",
+              "work=steadiness, gaming=latency+jitter, balanced=throughput.",
           },
         },
         required: ["profile"],
@@ -113,7 +122,7 @@ const TOOL_SCHEMAS = [
     function: {
       name: "pin_zone_proximity",
       description:
-        "For each measured spot, report which zone from analyze_room_photo it sits in, or the nearest one and how far away. Call analyze_room_photo first.",
+        "Which zone each measured spot sits in, or the nearest one and how far. Safe to call in the same batch as analyze_room_photo.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -122,7 +131,7 @@ const TOOL_SCHEMAS = [
     function: {
       name: "finalize_recommendations",
       description:
-        "Submit the final answer: exactly one pin per category, each with a one-line human reason. Rejects unknown pins, unknown categories and missing categories — fix anything it reports and call it again.",
+        "Submit the final answer: one pin per category with a one-line reason. Rejects unknown pins or missing categories — fix and call again.",
       parameters: {
         type: "object",
         properties: {
