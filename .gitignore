@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.*
+*.key
+render-key.txt
+*-key.txt
+.DS_Store
+npm-debug.log*

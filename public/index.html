@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FAF8F5">
+<title>Leher — where should you sit?</title>
+<meta name="description" content="Photograph your room, tap a few spots, and find out where your Wi-Fi actually works.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📶</text></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============================================================ SCREEN 1 -->
+<section id="screen-start" class="screen screen--start">
+  <div class="start-art" aria-hidden="true">
+    <svg viewBox="0 0 200 150" fill="none">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#4FD1C5"/><stop offset="100%" stop-color="#6366F1"/>
+        </linearGradient>
+      </defs>
+      <rect x="18" y="34" width="164" height="98" rx="14" fill="#fff" stroke="#E7E2DA" stroke-width="2"/>
+      <rect x="34" y="86" width="52" height="30" rx="6" fill="#F2EEE7"/>
+      <rect x="40" y="70" width="40" height="16" rx="3" fill="url(#g1)" opacity=".3"/>
+      <rect x="112" y="92" width="56" height="24" rx="9" fill="#F2EEE7"/>
+      <circle cx="140" cy="66" r="5" fill="url(#g1)"/>
+      <path d="M130 60a14 14 0 0 1 20 0M124 53a23 23 0 0 1 32 0M118 46a32 32 0 0 1 44 0"
+            stroke="url(#g1)" stroke-width="3.2" stroke-linecap="round"/>
+    </svg>
+  </div>
+
+  <h1>Where should you sit?</h1>
+  <p class="lede">Take a photo of your room. We'll test your Wi-Fi at a few spots and tell you where to sit.</p>
+
+  <label class="btn btn--primary" for="photo-input" id="photo-label">
+    <span id="photo-label-text">Take a photo of your room</span>
+  </label>
+  <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+
+  <p class="fineprint">Your photo stays in this session — we don't store it.</p>
+  <p class="error" id="start-error" hidden></p>
+</section>
+
+<!-- ============================================================ SCREEN 2 -->
+<section id="screen-measure" class="screen screen--measure" hidden>
+  <div class="chip" id="measure-chip">Stand where you want to test, then tap that spot.</div>
+
+  <div class="photo-stage">
+    <div class="photo-frame">
+      <img id="measure-photo" alt="Your room">
+      <div class="pins" id="measure-pins"></div>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <p class="counter" id="counter">No spots measured yet</p>
+    <button class="btn btn--primary" id="see-results" disabled>See my results</button>
+    <p class="hint" id="measure-hint">Tap at least 3 spots</p>
+  </div>
+</section>
+
+<!-- ============================================================ SCREEN 3 -->
+<section id="screen-results" class="screen screen--results" hidden>
+  <div class="photo-stage">
+    <div class="photo-frame">
+      <img id="results-photo" alt="Your room with recommended spots">
+      <div class="pins" id="results-pins"></div>
+      <div class="thinking" id="thinking" hidden>
+        <div class="thinking__inner">
+          <div class="spinner" aria-hidden="true"></div>
+          <p id="thinking-text">Looking at your room…</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="results-body">
+    <h2 id="results-title">Here's where to sit</h2>
+    <p class="note" id="results-note" hidden></p>
+    <div id="cards"></div>
+
+    <details class="numbers" id="numbers">
+      <summary>See the numbers</summary>
+      <div class="numbers__scroll">
+        <table id="numbers-table"></table>
+      </div>
+      <p class="fineprint">Measured latency and throughput from your browser — not Wi-Fi signal strength.</p>
+    </details>
+
+    <button class="btn btn--ghost" id="restart">Start over</button>
+  </div>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>

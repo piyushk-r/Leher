@@ -1,0 +1,18 @@
+{
+  "name": "leher",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Photograph your room, tap a few spots, and an AI agent tells you where to sit.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.1",
+    "express": "^4.21.2"
+  }
+}

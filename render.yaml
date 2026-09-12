@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: leher
+    runtime: node
+    plan: starter          # not `free`: the free tier spins down, and the cold
+                           # start both stalls the demo and poisons the first
+                           # measurement the user takes.
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: ANTHROPIC_API_KEY
+        sync: false        # set this in the Render dashboard, never in git

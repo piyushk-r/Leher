@@ -1,0 +1,134 @@
+# Leher (name) — Final Build Prompt (AI Buildathon, 150 min, Webapp on Render)
+
+You are a senior product strategist, full-stack web engineer, UX/UI designer, and rapid-prototyping expert.
+
+I want to ideate and scope a small but impactful consumer product that can be prototyped in **exactly 2 hours 30 minutes (150 minutes)** for an **AI Buildathon**.
+
+Be decisive, not exhaustive. This is a scoping pass for a build that starts immediately after — favor short tables and bullet judgments over long essays. If a section would take more than ~150 words to answer well, cut to the decision and move on.
+
+## Buildathon constraints (read first — these override defaults below)
+
+- **Must be genuinely agentic.** This is an AI Buildathon and will be judged as one. A single LLM completion call bolted onto a form is not enough — there must be an actual agent: an LLM that reasons over multiple inputs, uses defined tools/functions, and produces a decision a plain if/else couldn't cheaply replicate.
+- **Must be deployable on Render.** Organizers gave everyone Render credits, and the final prototype must end up live at a public URL judges can open themselves.
+- **This is a webapp — decided, not up for debate.** No browser, on any OS, exposes raw Wi-Fi RSSI/signal strength — that's an OS-level restriction with no workaround, so a native app was never actually necessary here. Render hosts web services (frontend + backend, one process, one URL), which is exactly what this product needs.
+- **The UI must feel genuinely polished** — this is a judged demo, not a debug tool. Friendly copy, clear visual hierarchy, real empty/loading/error states, mobile-first (judges will likely view it on a phone). Treat UI quality as a scored deliverable, not a finishing touch.
+
+Treat all of this as final — do not re-litigate webapp-vs-native or Render-vs-other-host in your answer.
+
+## Product Idea
+
+**The user photographs (or uploads a photo of) their actual room.** They then tap a handful of spots directly on that photo — standing at each real spot as they tap — and the app runs a short active network probe (latency + throughput) at each tap. Once a few spots are measured, an agent looks at **both** the room photo (to recognize zones like a desk, a couch/TV area, a bed, a quiet corner) **and** the measured performance at each tapped point, then returns **tailored recommendations pinned directly on the photo**: best spot for work, best for gaming, best for video calls, and best overall connection — each with a one-line reason a person would actually find useful.
+
+This is a step up from "pick one intent, get one answer": the agent reasons about the room *and* the data together, and shows the user everything at once, visually, on their own photo.
+
+### Important distinction
+
+The core metric is still **measured, actively-tested network performance** per spot — never claim it's reading Wi-Fi signal strength. The photo adds spatial and contextual understanding (what's actually in each part of the room) on top of that real data; it does not replace the measurement.
+
+---
+
+# What I want from you
+
+Do NOT jump directly into implementation. First run a tight ideation pass — every section short, ending in a decision.
+
+## 1. Sanity-check the idea (short)
+
+In a few bullets each: what problem this solves, who'd use it, why a single-bar signal indicator — or even a well-built native RSSI/channel analyzer like **WiFiAnalyzer** (github.com/VREMSoftwareDevelopment/WiFiAnalyzer — real, mature, open-source, live signal graphs, multi-band detection, distance estimation, zero AI) — still leaves the user to interpret raw numbers and walk around by trial and error, whether this is genuinely useful or a gimmick, and the 2-3 biggest risks (technical + product — include probe noise/variance between repeated measurements, Render cold-start latency skewing results, and vision misreading a cluttered or dim photo). If the concept is weak, say so and propose the fix in one line.
+
+## 2. Product statement + scope lock
+
+One line: *Target user → problem → action → result → value.*
+
+Then three short lists:
+- **MVP** — the absolute minimum that must work: photo upload, tap-to-measure on the photo, the agent producing at least 2-3 labeled recommendations (work / gaming / best overall) pinned on the photo, deployed and reachable at one URL
+- **Nice-to-have** — cut if time runs short: a dedicated "best for calls" category, a confidence indicator per recommendation, animated pin drop-in, light/dark theme
+- **Explicitly out of scope** — do not attempt in 150 minutes: precise object detection with bounding boxes, multi-room support, saving/comparing past sessions, user accounts, sensor-based auto-tracking
+
+## 3. Pick the direction (fast)
+
+List 3 variations on top of the settled webapp/photo/measured-performance base (e.g., photo + fixed recommendation categories; photo + free-text "what are you optimizing for?" the agent parses itself; photo + measured data with no vision zone-reading, agent reasons on numbers alone as a fallback if vision proves unreliable in testing). One line each on value/feasibility/demo impact. Pick the winner in 2-3 sentences — bias toward whichever is least likely to break live during judging.
+
+## 4. Design the photo flow, tap-to-measure, and grid (fast)
+
+Specify: how the photo is captured/uploaded (file input with camera capture attribute works on mobile browsers — no need for a custom camera UI), what happens on each tap (pin drops at that pixel coordinate, probe runs, pin updates with a quick visual result e.g. a small colored ring), how many taps are enough for a convincing demo (5-8), and what the pixel coordinates are used for (purely visual placement — no real-world distance math needed, this is not a floor plan). State the pick in one paragraph. Keep the photo itself resized/compressed client-side before upload so it doesn't bloat the vision API call or slow the page.
+
+## 5. Design the agent (mandatory, not optional)
+
+This is the section the buildathon will actually judge. Specify:
+
+- **The agent's tools/functions** — e.g. `analyze_room_photo` (vision call: identify a few named zones in the image and their approximate pixel region — desk/workspace, seating/TV area, bed, other), `score_spot_performance` (turn raw probe data into comparable metrics per tapped pin), `match_zone_to_activity` (reason about which recognized zone best fits work / gaming / calls, considering both what's visually there and which pins fall near it), `recommend_spots` (produce the final labeled list: best for work, best for gaming, best overall connection, each tied to a specific pin with a one-line reason).
+- **The reasoning loop** — vision analysis and performance scoring can run in parallel/independently; the recommendation step is where they actually get combined. Give one concrete example: *"The photo shows a desk near Pin 3, which also tested with the lowest, most consistent latency — that's the work recommendation. Pin 1 is near the TV/seating area and has the highest throughput — that's the gaming recommendation, even though its latency is slightly higher than Pin 3's."*
+- **What stays deterministic** — the raw probing, scoring, and ranking of pins by their numbers — vs. **what the LLM actually decides** — reading the photo, and trading off "what's visually in this spot" against "how it actually measured" per activity. Be explicit the split exists.
+- **Graceful degradation** — if the vision call is low-confidence or the photo is unclear, the agent should still return a numbers-only "best overall connection" pin rather than fail; never block the whole result on vision succeeding.
+- **Where it runs** — server-side in the same Render deployment, called once after the user finishes tapping spots.
+
+One real agent with a handful of tools is the bar — not a multi-agent system, and not a single unstructured prompt either.
+
+## 6. Technical architecture (must-have vs. skip)
+
+Recommend the simplest single-deployable architecture for 150 minutes:
+
+- **Frontend:** photo upload/capture, an overlay canvas for tap-to-drop pins on the photo with live per-pin status, a clean results view showing the same photo with labeled recommendation pins and short reasons in friendly cards below/beside it.
+- **Backend (same Render service):** a probe-target endpoint the frontend times requests against, and a `/recommend` endpoint that takes the photo (base64/multipart) + pin coordinates + measurements, runs the agent (vision-capable LLM call + tool logic), and returns the labeled recommendations with pixel coordinates for re-drawing pins on the frontend.
+
+Flag what to avoid entirely because it'll eat the clock: authentication, a database (in-memory/session state is enough), real object-detection models (use the vision LLM call itself, not a separate CV pipeline), multi-room support, precise floor-plan math. Note what Render needs to go live (start command, port binding, LLM API key as an env var, a `/health` endpoint, request size limits high enough for a compressed photo) and budget real minutes for a first deploy early.
+
+## 7. UX flow and visual design (make this genuinely nice — 3 screens)
+
+**Screen 1 — Start:** warm, simple explainer ("Take a photo of your room. We'll test your Wi-Fi at a few spots and tell you where to sit."), one clear primary action (upload/take photo), friendly illustration or icon rather than a wall of text.
+
+**Screen 2 — Measuring:** the uploaded photo fills most of the screen, tap-anywhere-to-measure with a short instruction chip, each tap shows a brief "measuring..." pulse animation on the pin then settles into a subtle colored dot (not a harsh red/green — use a calm gradient), a running counter ("4 spots measured — tap a few more, or see results"), a clearly visible "See my results" button that enables after 2-3 taps.
+
+**Screen 3 — Results:** the same photo with labeled pins (small friendly icons — 💼 work, 🎮 gaming, 📶 best connection — not raw numbers as the primary focus), a short reason under each as a card ("Great for work — steady connection near your desk"), a subtle way to see the raw numbers for anyone curious without cluttering the primary view.
+
+For each screen also define: states (empty, loading, error) and one-line error handling (upload failure → clear retry prompt; probe failure on a tap → mark that pin as unreliable and let the user re-tap it; agent/vision failure → fall back to a numbers-only best-connection pin with a quiet note, never a blank or broken screen). Use consistent spacing, a restrained color palette, and rounded/soft visual language throughout — the product should feel calm and helpful, not like a diagnostics tool.
+
+## 8. Measurement algorithm (simple, stated plainly)
+
+Short numbered list: running the timed probe per tap, scoring each pin's latency/throughput, sending the photo once through the vision tool to get zone labels + rough regions, matching pins to the nearest/most relevant zone, ranking pins per activity by combining zone-fit and measured score, and selecting the final pin per recommendation category (falling back to pure numeric ranking if vision zones are unavailable or low-confidence).
+
+## 9. 60-second demo script
+
+Tight beat-by-beat: hook line ("One photo. A few taps. WiFi Scout tells you exactly where to sit."), upload a real room photo live, tap 4-5 spots around the room as the presenter narrates ("kitchen counter... near the desk... by the couch..."), each tap settles with a quick visual result, tap "See my results," **agent call happens live** (brief friendly loading state — this is the payoff, don't hide it), the photo redraws with labeled pins for work/gaming/best connection and their one-line reasons appear as cards.
+
+## 10. Differentiation (short)
+
+Reference concretely: **WiFiAnalyzer** (VREMSoftwareDevelopment, open-source, GPLv3, Android/Kotlin) is the category benchmark — live channel/signal graphs, multi-band detection, distance estimation, zero AI, and the user still has to interpret numbers themselves with no sense of their actual room. This product differentiates on exactly what that category never does: it looks at the user's real room, understands what's in it, combines that with real measured performance, and hands back a plain-language, visually-anchored answer per activity — reachable at one link, no install. Be honest that WiFiAnalyzer's raw signal analysis is more detailed than anything buildable here in 150 minutes; win on photo-grounded reasoning and friendliness, not on depth of RF analysis.
+
+## 11. Final product spec
+
+Give me, concisely:
+
+- **Product Name**
+- **One-line description**
+- **Target User**
+- **Core Problem**
+- **Core Insight**
+- **MVP Features**
+- **User Flow**
+- **Technical Architecture** (single Render-deployed frontend+backend, clearly laid out)
+- **Measurement Algorithm**
+- **Agent Design** — tools (including the vision tool), reasoning loop, deterministic/LLM split, graceful-degradation behavior, one worked example
+- **Deployment Plan** — what's deployed to Render, endpoint contract(s), required secrets/env vars (including the vision-capable LLM API key), health-check, fallback behavior if the agent/vision call fails or is slow
+- **UX/Visual Design Notes** — the friendly-and-polished specifics from Section 7
+- **Biggest Risks**
+- **150-Minute Build Plan** — time-boxed blocks summing to 150 minutes: scaffolding + first Render deploy, probe endpoint + frontend timing logic, photo upload + tap-to-pin UI, agent (vision tool + scoring + recommend) + deploy of that endpoint, results screen with labeled pins and cards, UI polish pass, demo rehearsal, buffer
+- **60-Second Demo Script**
+- **Future Improvements** (brief — e.g. "best for calls" as its own category, session history, multi-room, precise object bounding boxes)
+
+## Constraints (strict)
+
+- Total build time: **150 minutes**, including deployment
+- Single deployable unit on Render — frontend and backend both live there, one public URL
+- No native app, no APK — must run in a phone browser
+- The core metric is measured latency/throughput per spot, not RSSI — never claim it's reading Wi-Fi signal strength
+- The agent must be a real tool-using reasoning step that combines the photo and the measurements — not a single unstructured prompt, and not vision alone with no real data behind it
+- Photos are processed in-memory for the session only — no persistence/storage needed for the MVP
+- No authentication, no database (in-memory/session state is enough for a demo)
+- Keep the Render service minimal: a couple of endpoints, no queueing/workers, no heavy infra
+- Must produce a visible, understandable, visually pinned-on-the-photo result end-to-end, including a live call to the deployed agent
+- UI polish is a requirement, not a stretch goal — friendly copy, calm visual design, real loading/error states
+- Reliability over sophistication — a working deployed app with graceful fallbacks (including a numbers-only fallback if vision fails) beats an impressive one that's flaky during judging
+- Genuinely usable prototype, not a mocked-up UI, and not a mocked-up agent call either
+
+Think like a product engineer trying to ship one compelling, working, *deployed, browser-only, genuinely pleasant-to-use* demo in 150 minutes — not like someone showcasing every technology available. Challenge the initial idea where it's weak, then commit to the improved MVP and stop deliberating.
