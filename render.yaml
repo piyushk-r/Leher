@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: leher
+    name: leher-wheretosit
     runtime: node
     plan: starter          # not `free`: the free tier spins down, and the cold
                            # start both stalls the demo and poisons the first

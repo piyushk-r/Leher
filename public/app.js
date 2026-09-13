@@ -15,10 +15,54 @@ const MIN_TRANSFER_SECONDS = 0.25;  // below this the number is RTT, not bandwid
 const MIN_PIN_ANIMATION_MS = 1100;
 
 const CATEGORY_META = {
-  work: { emoji: "💼", title: "Great for work" },
-  gaming: { emoji: "🎮", title: "Best for gaming" },
-  overall: { emoji: "📶", title: "Best connection" },
+  work: { title: "Great for work" },
+  gaming: { title: "Best for gaming" },
+  overall: { title: "Best connection" },
 };
+
+const CATEGORY_ICON_PATHS = {
+  work: [
+    "M3.5 8.5h17v11h-17z",
+    "M8 8.5V6.7A1.7 1.7 0 0 1 9.7 5h4.6A1.7 1.7 0 0 1 16 6.7v1.8",
+    "M3.5 12.5h17",
+    "M10.2 12.5v2h3.6v-2",
+  ],
+  gaming: [
+    "M7.1 9.4h9.8c2.3 0 3.7 2.5 2.6 4.5l-1.3 2.4a2.3 2.3 0 0 1-3.2.9l-1.6-1.1h-2.8L9 17.2a2.3 2.3 0 0 1-3.2-.9l-1.3-2.4c-1.1-2 .3-4.5 2.6-4.5Z",
+    "M8 12.2v3.2M6.4 13.8h3.2",
+    "M16.3 13.1h.01M18.2 15h.01",
+  ],
+  overall: [
+    "M5 15.5a10 10 0 0 1 14 0",
+    "M8 18a5.7 5.7 0 0 1 8 0",
+    "M10.7 20.4a1.9 1.9 0 0 1 2.6 0",
+  ],
+};
+
+function createCategoryIcon(category) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.classList.add("category-icon");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+
+  for (const d of CATEGORY_ICON_PATHS[category] ?? CATEGORY_ICON_PATHS.overall) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+
+  if (category === "overall") {
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("cx", "12");
+    dot.setAttribute("cy", "20.4");
+    dot.setAttribute("r", ".7");
+    dot.setAttribute("fill", "currentColor");
+    dot.setAttribute("stroke", "none");
+    svg.append(dot);
+  }
+
+  return svg;
+}
 
 const state = {
   photo: null,
@@ -190,6 +234,8 @@ function updateCounter() {
   const done = state.pins.filter((p) => p.status === "done").length;
   const measuring = state.pins.some((p) => p.status === "measuring");
 
+  $("scan-step").textContent = `${String(Math.min(done, MIN_SPOTS)).padStart(2, "0")} / ${String(MIN_SPOTS).padStart(2, "0")}`;
+
   $("counter").textContent =
     done === 0
       ? measuring
@@ -320,9 +366,12 @@ function renderResults(payload) {
     el.style.top = `${info.y * 100}%`;
     el.style.animationDelay = `${n * 140}ms`;
     el.dataset.pin = pinId;
-    el.innerHTML =
-      `<span class="emoji">${info.cats.map((c) => CATEGORY_META[c].emoji).join("")}</span>` +
-      `<span>${pinId}</span>`;
+    const icons = document.createElement("span");
+    icons.className = "pin__icons";
+    for (const category of info.cats) icons.append(createCategoryIcon(category));
+    const label = document.createElement("span");
+    label.textContent = pinId;
+    el.append(icons, label);
     pinsEl.append(el);
     pinEls.set(pinId, el);
     n += 1;
@@ -336,12 +385,21 @@ function renderResults(payload) {
     const card = document.createElement("div");
     card.className = "card";
     card.style.animationDelay = `${i * 90}ms`;
-    card.innerHTML =
-      `<div class="card__emoji">${meta.emoji}</div>` +
-      `<div><p class="card__title">${meta.title}</p>` +
-      `<p class="card__reason"></p>` +
-      `<p class="card__meta">${rec.pin_id}${metric ? ` · ${metric.median_rtt_ms} ms · ${metric.mbps} Mbps` : ""}</p></div>`;
-    card.querySelector(".card__reason").textContent = rec.reason;
+    const icon = document.createElement("div");
+    icon.className = "card__icon";
+    icon.append(createCategoryIcon(rec.category));
+    const body = document.createElement("div");
+    const title = document.createElement("p");
+    title.className = "card__title";
+    title.textContent = meta.title;
+    const reason = document.createElement("p");
+    reason.className = "card__reason";
+    reason.textContent = rec.reason;
+    const cardMeta = document.createElement("p");
+    cardMeta.className = "card__meta";
+    cardMeta.textContent = `${rec.pin_id}${metric ? ` · ${metric.median_rtt_ms} ms · ${metric.mbps} Mbps` : ""}`;
+    body.append(title, reason, cardMeta);
+    card.append(icon, body);
     cardsEl.append(card);
   });
 

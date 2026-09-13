@@ -3,48 +3,76 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#FAF8F5">
+<meta name="theme-color" content="#F5F0E7">
 <title>Leher — where should you sit?</title>
 <meta name="description" content="Photograph your room, tap a few spots, and find out where your Wi-Fi actually works.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📶</text></svg>">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none'%3E%3Cpath d='M3 16c4.2-8 8.4 8 12.6 0s8.4 8 13.4 0' stroke='%23102A56' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
 <!-- ============================================================ SCREEN 1 -->
 <section id="screen-start" class="screen screen--start">
-  <div class="start-art" aria-hidden="true">
-    <svg viewBox="0 0 200 150" fill="none">
-      <defs>
-        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#4FD1C5"/><stop offset="100%" stop-color="#6366F1"/>
-        </linearGradient>
-      </defs>
-      <rect x="18" y="34" width="164" height="98" rx="14" fill="#fff" stroke="#E7E2DA" stroke-width="2"/>
-      <rect x="34" y="86" width="52" height="30" rx="6" fill="#F2EEE7"/>
-      <rect x="40" y="70" width="40" height="16" rx="3" fill="url(#g1)" opacity=".3"/>
-      <rect x="112" y="92" width="56" height="24" rx="9" fill="#F2EEE7"/>
-      <circle cx="140" cy="66" r="5" fill="url(#g1)"/>
-      <path d="M130 60a14 14 0 0 1 20 0M124 53a23 23 0 0 1 32 0M118 46a32 32 0 0 1 44 0"
-            stroke="url(#g1)" stroke-width="3.2" stroke-linecap="round"/>
-    </svg>
+  <header class="topbar topbar--start">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10c2.7-5 5.3 5 8 0s5.3 5 6 0" /></svg></span>
+      <span>Leher</span>
+    </div>
+  </header>
+
+  <div class="start-grid">
+    <div class="start-copy">
+      <h1>Where should<br><span>you sit?</span></h1>
+      <p class="lede">Take a photo of your room. We'll test your Wi-Fi at a few spots and tell you where to sit.</p>
+
+      <label class="btn btn--primary" for="photo-input" id="photo-label">
+        <span id="photo-label-text">Take a photo of your room</span>
+        <span class="btn__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7.5h3.2l1.5-2h6.6l1.5 2H20a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 20 19.5H4A1.5 1.5 0 0 1 2.5 18V9A1.5 1.5 0 0 1 4 7.5Z"/><circle cx="12" cy="13.5" r="3.25"/></svg></span>
+      </label>
+      <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+
+      <p class="fineprint"><span class="fineprint__lock" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="m8 1.5 5.5 6.5L8 14.5 2.5 8 8 1.5Z" /><path d="m5.7 8 1.6 1.6L10.6 6.3" /></svg></span>Your photo stays in this session — we don't store it.</p>
+      <p class="error" id="start-error" role="alert" hidden></p>
+    </div>
+
+    <div class="start-visual" aria-hidden="true">
+      <div class="start-art">
+        <svg viewBox="0 0 540 430" fill="none">
+          <path class="plan-grid" d="M22 44h496M22 94h496M22 144h496M22 194h496M22 244h496M22 294h496M22 344h496M70 20v388M120 20v388M170 20v388M220 20v388M270 20v388M320 20v388M370 20v388M420 20v388M470 20v388"/>
+          <rect class="plan-floor" x="62" y="40" width="416" height="330" rx="2"/>
+          <path class="plan-wall" d="M62 370V40h416v330M62 370h155m58 0h203M62 40h416"/>
+          <path class="plan-door" d="M62 309h62M124 370a61 61 0 0 0-62-61"/>
+          <path class="plan-object" d="M92 92h128v92H92zM101 102h110v34H101zM101 143h52v31h-52zm59 0h51v31h-51zM113 194h84v43h-84z"/>
+          <circle class="plan-object" cx="292" cy="177" r="48"/>
+          <path class="plan-object" d="M365 83h79v105h-79zM375 94h59v34h-59zM375 139h59v39h-59zM359 197h91"/>
+          <path class="plan-object" d="M329 263h109v75H329zM338 273h91v42h-91z"/>
+          <path class="plan-router" d="M235 365h70M250 365l9-34m32 34-9-34m-31 0h40M244 324a26 26 0 0 1 48 0m-56-9a34 34 0 0 1 64 0"/>
+          <path class="plan-route" d="M270 329 153 208M270 329 292 177M270 329 393 229M270 329 174 288M270 329 396 294"/>
+          <g class="plan-target"><circle cx="153" cy="208" r="19"/><circle cx="153" cy="208" r="9"/><circle cx="153" cy="208" r="3"/></g>
+          <g class="plan-target"><circle cx="292" cy="177" r="19"/><circle cx="292" cy="177" r="9"/><circle cx="292" cy="177" r="3"/></g>
+          <g class="plan-target"><circle cx="393" cy="229" r="19"/><circle cx="393" cy="229" r="9"/><circle cx="393" cy="229" r="3"/></g>
+          <g class="plan-target"><circle cx="174" cy="288" r="19"/><circle cx="174" cy="288" r="9"/><circle cx="174" cy="288" r="3"/></g>
+          <g class="plan-target"><circle cx="396" cy="294" r="19"/><circle cx="396" cy="294" r="9"/><circle cx="396" cy="294" r="3"/></g>
+        </svg>
+      </div>
+      <div class="visual-caption">Same room. A better spot.</div>
+    </div>
   </div>
-
-  <h1>Where should you sit?</h1>
-  <p class="lede">Take a photo of your room. We'll test your Wi-Fi at a few spots and tell you where to sit.</p>
-
-  <label class="btn btn--primary" for="photo-input" id="photo-label">
-    <span id="photo-label-text">Take a photo of your room</span>
-  </label>
-  <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
-
-  <p class="fineprint">Your photo stays in this session — we don't store it.</p>
-  <p class="error" id="start-error" hidden></p>
 </section>
 
 <!-- ============================================================ SCREEN 2 -->
 <section id="screen-measure" class="screen screen--measure" hidden>
-  <div class="chip" id="measure-chip">Stand where you want to test, then tap that spot.</div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10c2.7-5 5.3 5 8 0s5.3 5 6 0" /></svg></span>
+      <span>Leher</span>
+    </div>
+    <div class="scan-progress"><span class="scan-progress__label">ROOM SCAN</span><span class="scan-progress__bar"><i></i></span><span id="scan-step">00 / 03</span></div>
+  </header>
+
+  <div class="chip" id="measure-chip"><span class="chip__pulse" aria-hidden="true"></span><span>Stand where you want to test, then tap that spot.</span></div>
 
   <div class="photo-stage">
     <div class="photo-frame">
@@ -62,36 +90,58 @@
 
 <!-- ============================================================ SCREEN 3 -->
 <section id="screen-results" class="screen screen--results" hidden>
-  <div class="photo-stage">
-    <div class="photo-frame">
-      <img id="results-photo" alt="Your room with recommended spots">
-      <div class="pins" id="results-pins"></div>
-      <div class="thinking" id="thinking" hidden>
-        <div class="thinking__inner">
-          <div class="spinner" aria-hidden="true"></div>
-          <p id="thinking-text">Looking at your room…</p>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M3 10c2.7-5 5.3 5 8 0s5.3 5 6 0" /></svg></span>
+      <span>Leher</span>
+    </div>
+    <div class="topbar__status"><span class="status-dot status-dot--live"></span>Scan complete</div>
+  </header>
+
+  <div class="results-intro">
+    <h2 id="results-title">Here's where to sit</h2>
+    <p class="results-subtitle">Based on what we tested at each spot you tapped.</p>
+  </div>
+
+  <div class="results-layout">
+    <div class="results-map-column">
+      <div class="photo-stage">
+        <div class="photo-frame">
+          <img id="results-photo" alt="Your room with recommended spots">
+          <div class="pins" id="results-pins"></div>
+          <div class="thinking" id="thinking" hidden>
+            <div class="thinking__inner">
+              <div class="spinner" aria-hidden="true"></div>
+              <p id="thinking-text">Looking at your room…</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <div class="results-body">
-    <h2 id="results-title">Here's where to sit</h2>
-    <p class="note" id="results-note" hidden></p>
-    <div id="cards"></div>
+    <aside class="results-body">
+      <p class="note" id="results-note" hidden></p>
 
-    <h3 class="section-title" id="spots-title" hidden>What each spot is good for</h3>
-    <div id="spot-list"></div>
+      <section class="recommendations">
+        <h3 class="section-title">Recommended spots</h3>
+        <div id="cards"></div>
+      </section>
 
-    <details class="numbers" id="numbers">
-      <summary>See the numbers</summary>
-      <div class="numbers__scroll">
-        <table id="numbers-table"></table>
+      <h3 class="section-title" id="spots-title" hidden>What each spot is good for</h3>
+      <div id="spot-list"></div>
+
+      <details class="numbers" id="numbers">
+        <summary>See the numbers</summary>
+        <div class="numbers__scroll">
+          <table id="numbers-table"></table>
+        </div>
+        <p class="fineprint" id="numbers-note">Measured latency and throughput from your browser — not Wi-Fi signal strength.</p>
+      </details>
+
+      <div class="results-actions">
+        <button class="btn btn--ghost" id="restart">Start over</button>
       </div>
-      <p class="fineprint" id="numbers-note">Measured latency and throughput from your browser — not Wi-Fi signal strength.</p>
-    </details>
-
-    <button class="btn btn--ghost" id="restart">Start over</button>
+    </aside>
   </div>
 </section>
 
